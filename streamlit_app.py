@@ -1,5 +1,6 @@
 import re
 from typing import List, Tuple, Dict
+import urllib.parse
 
 import numpy as np
 import pandas as pd
@@ -20,12 +21,11 @@ st.set_page_config(
 )
 
 st.title("AI Business Idea Validator")
-st.caption("ML + NLP based scoring for startup / business ideas")
+st.caption("ML + NLP based scoring and analysis for startup / business ideas")
 
 
 # -----------------------------
 # 1. Training data (toy dataset)
-#    You can expand this later or load from CSV.
 # -----------------------------
 def get_training_data() -> pd.DataFrame:
     data = [
@@ -51,13 +51,12 @@ def get_training_data() -> pd.DataFrame:
         ("Basic online shop without niche focus", "E-commerce", "Low"),
     ]
     df = pd.DataFrame(data, columns=["text", "industry", "label"])
-    # Combine text + industry to give model more signal
     df["combined"] = df["text"] + " [INDUSTRY] " + df["industry"]
     return df
 
 
 # -----------------------------
-# 2. Model training (TF-IDF + Logistic Regression)
+# 2. Model training
 # -----------------------------
 @st.cache_resource(show_spinner=False)
 def train_model() -> Tuple[Pipeline, Dict[str, Dict]]:
@@ -76,7 +75,6 @@ def train_model() -> Tuple[Pipeline, Dict[str, Dict]]:
 
     pipeline.fit(X_train, y_train)
 
-    # Evaluate on validation set (for report)
     y_pred = pipeline.predict(X_val)
     report_dict = classification_report(
         y_val, y_pred, output_dict=True, zero_division=0
@@ -89,7 +87,7 @@ model, model_report = train_model()
 
 
 # -----------------------------
-# 3. Auxiliary "AI explanation" features
+# 3. Explanation features
 # -----------------------------
 INDUSTRY_DEMAND = {
     "Food & Beverage": 0.8,
@@ -152,9 +150,9 @@ def compute_explanatory_features(title: str, desc: str, industry: str) -> Tuple[
     feature_details = {
         "Keyword richness": round(keyword_richness * 100),
         "Industry demand": round(industry_demand * 100),
-        "Novelty (less generic)": round(novelty * 100),
-        "Simplicity (clarity)": round(simplicity * 100),
-        "Length (word count)": word_count,
+        "Novelty": round(novelty * 100),
+        "Simplicity": round(simplicity * 100),
+        "Length (words)": word_count,
     }
 
     return feature_details, keywords
@@ -164,13 +162,13 @@ def suggest_business_models(text: str) -> List[str]:
     t = text.lower()
     models = []
     if any(w in t for w in ["subscription", "monthly", "saas"]):
-        models.append("Subscription model")
+        models.append("Subscription")
     if any(w in t for w in ["marketplace", "buyers", "sellers", "listing", "connect"]):
-        models.append("Marketplace model")
+        models.append("Marketplace")
     if any(w in t for w in ["delivery", "on-demand", "on demand", "logistics"]):
-        models.append("On-demand / delivery model")
+        models.append("On-demand / delivery")
     if any(w in t for w in ["course", "learn", "training", "tutorial", "academy"]):
-        models.append("Online course / cohort model")
+        models.append("Online course / cohort")
     if not models:
         models.append("Direct-to-consumer (D2C)")
     return models
@@ -182,190 +180,210 @@ def identify_risks(industry: str, text: str) -> List[str]:
     if industry == "Food & Beverage":
         risks.append("Perishable inventory and food safety requirements.")
     if industry in ["E-commerce", "Software/SaaS", "Fintech"]:
-        risks.append("High competition – strong differentiation and marketing needed.")
+        risks.append("High competition – strong differentiation needed.")
     if "delivery" in t or "on-demand" in t:
         risks.append("Operational complexity in logistics and last-mile delivery.")
     if "subscription" in t:
-        risks.append("Churn risk – customers may cancel if value is not sustained.")
+        risks.append("Churn risk – customers may cancel if value drops.")
     if len(risks) == 0:
         risks.append("Need to validate real customer demand and willingness to pay.")
     return risks
 
 
-def suggest_next_steps(pred_label: str) -> List[str]:
+def suggest_next_steps(pred_label: str, goal: str) -> List[str]:
+    if goal == "Market validation":
+        base = [
+            "Interview at least 5–10 target customers.",
+            "Create a simple landing page and measure signups.",
+            "Test whether people understand the value in 10 seconds."
+        ]
+    elif goal == "Competition analysis":
+        base = [
+            "Search for top 5 competitors and list their strengths/weaknesses.",
+            "Identify at least 2–3 clear differentiators for your idea.",
+            "Check pricing and positioning of similar tools."
+        ]
+    else:  # Funding readiness
+        base = [
+            "Prepare a 1-page problem/solution/market summary.",
+            "Estimate basic unit economics (how you make money).",
+            "Collect early traction metrics (signups, waitlist, pilots)."
+        ]
+
+    # Tweak depending on model label
     if pred_label == "High":
-        return [
-            "Build a simple landing page and collect at least 100 signups.",
-            "Interview 5–10 target customers to refine feature set.",
-            "Create a small MVP and test one pricing option."
-        ]
+        base.insert(0, "Double down: your idea seems promising, focus on execution.")
     elif pred_label == "Medium":
-        return [
-            "Narrow down to a specific niche or customer segment.",
-            "Validate the core problem via customer interviews.",
-            "Test the idea using a no-code prototype or mockups."
-        ]
+        base.insert(0, "Refine positioning: idea has potential but needs sharper focus.")
     else:
-        return [
-            "Clarify the exact problem and target customer persona.",
-            "Study at least 3–5 competitors or similar solutions.",
-            "Refine the value proposition to be more specific and unique."
-        ]
+        base.insert(0, "Rework the concept: current version looks weak; sharpen the problem and niche.")
+
+    return base
+
+
+def google_search_link(query: str) -> str:
+    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
 
 
 # -----------------------------
 # 4. UI Layout
 # -----------------------------
 
-# Sidebar – general info
 with st.sidebar:
-    st.header("About this tool")
+    st.header("About")
     st.write(
-        "This is a **machine learning–based** evaluator for business ideas. "
-        "It uses a TF-IDF + Logistic Regression model trained on sample startup "
-        "ideas (High / Medium / Low potential)."
+        "This tool uses **TF-IDF + Logistic Regression** to classify ideas into "
+        "*High / Medium / Low* potential, and combines that with interpretable "
+        "NLP features for explanation."
     )
-    st.write("Technologies:")
-    st.code("Python · Streamlit · scikit-learn · TF-IDF · Logistic Regression", language="bash")
+    st.write("Tech stack:")
+    st.code("Python · Streamlit · scikit-learn · TF-IDF · LogisticRegression")
 
-    with st.expander("Model details (for viva)"):
-        st.write("Model: Logistic Regression on TF-IDF features.")
-        st.write("Labels: High, Medium, Low potential.")
+    with st.expander("Model validation (for viva)"):
         st.json(model_report, expanded=False)
 
 
-# Main inputs & outputs
-input_col, result_col = st.columns([1.1, 1.3])
+left_col, right_col = st.columns([1.1, 1.4])
 
-with input_col:
-    st.subheader("Enter your business idea")
+with left_col:
+    st.subheader("1️⃣ Input your idea")
 
     title = st.text_input(
         "Business Idea Title",
-        placeholder="e.g., Subscription-based healthy tiffin service for office workers"
+        placeholder="Subscription-based healthy tiffin service for office workers"
     )
     desc = st.text_area(
         "Describe your idea",
         placeholder="What problem do you solve? Who is the customer? How does it work?",
-        height=200
+        height=180
     )
     industry = st.selectbox(
         "Industry",
         ["Food & Beverage", "E-commerce", "Home Services", "Education",
          "Healthcare", "Fintech", "Software/SaaS", "Other"]
     )
+    goal = st.radio(
+        "What is your current goal?",
+        ["Market validation", "Competition analysis", "Funding readiness"],
+        horizontal=False
+    )
 
-    analyze_btn = st.button("Analyze Idea")
+    analyze_btn = st.button("🔍 Analyze Idea")
 
-with result_col:
-    st.subheader("AI Evaluation")
+with right_col:
+    st.subheader("2️⃣ AI Evaluation & Insights")
 
     if analyze_btn:
         if not title.strip() or not desc.strip():
-            st.warning("Please fill in both the title and the description.")
+            st.warning("Please fill in both the title and description.")
         else:
             full_text = f"{title} {desc}"
             combined = f"{title} {desc} [INDUSTRY] {industry}"
 
-            # 1) ML model prediction
+            # ML prediction
             pred_label = model.predict([combined])[0]
             proba = model.predict_proba([combined])[0]
             classes = model.classes_
 
-            # Overall score from probabilities
+            # Score from probabilities
             label_to_weight = {"Low": 0.3, "Medium": 0.6, "High": 1.0}
-            weighted_score = sum(
-                label_to_weight[c] * p for c, p in zip(classes, proba)
-            )
+            weighted_score = sum(label_to_weight[c] * p for c, p in zip(classes, proba))
             overall_score = int(weighted_score * 100)
 
-            # 2) Explanation features
+            # Explanation features
             feature_details, keywords = compute_explanatory_features(title, desc, industry)
             models = suggest_business_models(full_text)
             risks = identify_risks(industry, full_text)
-            steps = suggest_next_steps(pred_label)
+            steps = suggest_next_steps(pred_label, goal)
 
-            # Top-level metrics
-            top1_col, top2_col = st.columns(2)
-            with top1_col:
+            # Top metrics
+            top1, top2 = st.columns(2)
+            with top1:
                 st.metric("Overall Feasibility Score", f"{overall_score}/100")
-            with top2_col:
-                st.metric("Predicted Potential Category", pred_label)
+            with top2:
+                st.metric("Predicted Category", pred_label)
 
-            # Probability breakdown table
-            st.markdown("#### Class probabilities (ML model output)")
+            # Probability chart
+            st.markdown("#### Class probabilities (ML output)")
             prob_df = pd.DataFrame({
                 "Category": classes,
                 "Probability": np.round(proba * 100, 1)
-            }).sort_values("Probability", ascending=False)
-            st.table(prob_df)
+            }).sort_values("Probability", ascending=True)
+            st.bar_chart(
+                prob_df.set_index("Category"),
+                height=200
+            )
 
-            # Feature breakdown
-            st.markdown("#### Feature breakdown (for explanation)")
-            fb1, fb2 = st.columns(2)
-            with fb1:
-                st.write(f"- Keyword richness: **{feature_details['Keyword richness']} / 100**")
-                st.write(f"- Industry demand: **{feature_details['Industry demand']} / 100**")
-            with fb2:
-                st.write(f"- Novelty (less generic): **{feature_details['Novelty (less generic)']} / 100**")
-                st.write(f"- Simplicity / clarity: **{feature_details['Simplicity (clarity)']} / 100**")
-                st.write(f"- Length: **{feature_details['Length (word count)']} words**")
+            # Feature breakdown chart
+            st.markdown("#### Feature breakdown (explanation)")
+            feat_df = pd.DataFrame(
+                {
+                    "Feature": [k for k in feature_details.keys() if k != "Length (words)"],
+                    "Score": [feature_details[k] for k in feature_details.keys() if k != "Length (words)"]
+                }
+            )
+            st.bar_chart(
+                feat_df.set_index("Feature"),
+                height=220
+            )
+            st.write(f"- Length: **{feature_details['Length (words)']} words**")
 
             # Keywords
-            st.markdown("#### Extracted keywords (NLP)")
+            st.markdown("#### Extracted keywords")
             if keywords:
                 st.write(", ".join(f"`{k}`" for k in keywords))
             else:
-                st.write("_No strong keywords extracted. Try adding more specific details._")
+                st.write("_No strong keywords extracted. Try using more specific, concrete words._")
 
             # Suggested business models
             st.markdown("#### Suggested business model(s)")
-            for m in models:
-                st.write(f"- {m}")
+            st.write(", ".join(models))
 
             # Risks
-            st.markdown("#### Key risks to consider")
+            st.markdown("#### Key risks")
             for r in risks:
                 st.write(f"- {r}")
 
-            # Recommended next steps
+            # Next steps based on goal
             st.markdown("#### Recommended next steps")
             for s in steps:
                 st.write(f"- {s}")
 
-            # Technical explanation section
+            # Google links (real-time research helpers)
+            st.markdown("#### 🔗 Quick Google research links")
+            comp_query = f"{industry} {title} competitors"
+            market_query = f"{industry} market size report"
+            st.markdown(f"- [Search competitors]({google_search_link(comp_query)})")
+            st.markdown(f"- [Search market size / trends]({google_search_link(market_query)})")
+            st.markdown(
+                f"- [Search similar startup ideas]({google_search_link(title + ' startup idea')})"
+            )
+
+            # Technical explanation
             with st.expander("Technical explanation (for report / viva)"):
                 st.markdown(
                     """
-                    **1. ML model architecture**
+                    **Model pipeline**
 
-                    - Text is converted into numerical features using **TF-IDF vectorization**
-                      (unigrams + bigrams).
-                    - A **Logistic Regression** classifier is trained on labeled examples
-                      of ideas (High / Medium / Low potential).
-                    - For a new idea, the model outputs:
-                      - A predicted label (High / Medium / Low)
-                      - Probabilities for each label.
+                    - Input text is combined with the industry tag.
+                    - Features are generated using **TF-IDF vectorization** (unigrams + bigrams).
+                    - A **Logistic Regression** classifier is trained on labeled ideas
+                      (High / Medium / Low potential).
 
-                    **2. Additional feature engineering (NLP-style):**
+                    **Outputs**
 
-                    - The system also computes explainable features:
-                      - Keyword richness (distinct important words).
-                      - Industry demand (predefined weights per industry).
-                      - Novelty (penalizes overly generic buzzwords).
-                      - Simplicity (based on description length).
+                    - Class probabilities (used to draw the bar chart).
+                    - A weighted overall feasibility score (0–100).
+                    - Additional hand-crafted NLP features (keyword richness, industry demand,
+                      novelty, simplicity) are calculated to keep the model explainable.
 
-                    **3. Final score calculation**
+                    **Why this is AI / ML and not just rules**
 
-                    - The class probabilities are combined using weights:
-                      - Low = 0.3, Medium = 0.6, High = 1.0
-                    - The weighted sum is scaled to a 0–100 score.
-
-                    This combination of a trained ML model + rule-based explanations
-                    makes the system both **data-driven** and **interpretable**, which
-                    is ideal for a software engineering project.
+                    - The TF-IDF + Logistic Regression model actually learns from example data
+                      instead of using only fixed if-else rules.
+                    - The more (and better) labeled ideas you add to the dataset, the smarter
+                      and more accurate the model becomes.
                     """
                 )
     else:
-        st.info("Fill in your idea on the left and click **Analyze Idea** to see the model output here.")
-
+        st.info("Enter your idea on the left and click **Analyze Idea** to see charts and AI insights here.")
