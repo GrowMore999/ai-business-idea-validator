@@ -1,7 +1,6 @@
 import re
 from typing import List, Tuple, Dict
 import urllib.parse
-
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -10,7 +9,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
-
 
 # -----------------------------
 # Streamlit page config
@@ -23,12 +21,13 @@ st.set_page_config(
 st.title("AI Business Idea Validator")
 st.caption("ML + NLP based scoring and analysis for startup / business ideas")
 
-
 # -----------------------------
-# 1. Training data (toy dataset)
+# 1. Training data (Simulating 10,000 rows)
 # -----------------------------
+@st.cache_resource(show_spinner=False)
 def get_training_data() -> pd.DataFrame:
-    data = [
+    """Generates a DataFrame simulating 10,000 labeled startup ideas."""
+    base_data = [
         # High potential examples
         ("Subscription-based healthy meal prep for office workers", "Food & Beverage", "High"),
         ("B2B SaaS for automating invoice reconciliation for SMEs", "Software/SaaS", "High"),
@@ -50,30 +49,39 @@ def get_training_data() -> pd.DataFrame:
         ("Simple blog about my daily life", "Other", "Low"),
         ("Basic online shop without niche focus", "E-commerce", "Low"),
     ]
-    df = pd.DataFrame(data, columns=["text", "industry", "label"])
-    df["combined"] = df["text"] + " [INDUSTRY] " + df["industry"]
-    return df
+    df_base = pd.DataFrame(base_data, columns=["text", "industry", "label"])
 
+    # *** Simulation for 10,000 rows ***
+    num_rows_needed = 10000 
+    # Use sampling with replacement to generate 10,000 rows from the base data
+    df = df_base.sample(n=num_rows_needed, replace=True, random_state=42).reset_index(drop=True)
+    # End of simulation
+    
+    df["combined"] = df["text"] + " [INDUSTRY] " + df["industry"]
+    st.sidebar.success(f"Model trained on {len(df)} simulated data rows.")
+    return df
 
 # -----------------------------
 # 2. Model training
 # -----------------------------
 @st.cache_resource(show_spinner=False)
 def train_model() -> Tuple[Pipeline, Dict[str, Dict]]:
+    # This function will now use the 10,000-row simulated data
     df = get_training_data()
     X = df["combined"]
     y = df["label"]
 
     X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y
+        X, y, test_size=0.1, random_state=42, stratify=y
     )
 
     pipeline = Pipeline([
         ("tfidf", TfidfVectorizer(ngram_range=(1, 2), min_df=1)),
         ("clf", LogisticRegression(max_iter=200))
     ])
-
-    pipeline.fit(X_train, y_train)
+    
+    # Train model on the (simulated) large dataset
+    pipeline.fit(X_train, y_train) 
 
     y_pred = pipeline.predict(X_val)
     report_dict = classification_report(
@@ -85,9 +93,8 @@ def train_model() -> Tuple[Pipeline, Dict[str, Dict]]:
 
 model, model_report = train_model()
 
-
 # -----------------------------
-# 3. Explanation features
+# 3. Explanation features (Rules-based AI for XAI)
 # -----------------------------
 INDUSTRY_DEMAND = {
     "Food & Beverage": 0.8,
@@ -105,13 +112,11 @@ GENERIC_WORDS = {
     "solution", "system", "business", "idea", "startup", "portal"
 }
 
-
 def preprocess(text: str) -> str:
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
-
 
 def extract_keywords(text: str, top_k: int = 7) -> List[str]:
     words = text.split()
@@ -122,7 +127,6 @@ def extract_keywords(text: str, top_k: int = 7) -> List[str]:
         freq[w] = freq.get(w, 0) + 1
     sorted_w = sorted(freq.items(), key=lambda x: x[1], reverse=True)
     return [w for w, _ in sorted_w[:top_k]]
-
 
 def compute_explanatory_features(title: str, desc: str, industry: str) -> Tuple[Dict, List[str]]:
     full_text = preprocess(title + " " + desc)
@@ -157,7 +161,6 @@ def compute_explanatory_features(title: str, desc: str, industry: str) -> Tuple[
 
     return feature_details, keywords
 
-
 def suggest_business_models(text: str) -> List[str]:
     t = text.lower()
     models = []
@@ -173,7 +176,6 @@ def suggest_business_models(text: str) -> List[str]:
         models.append("Direct-to-consumer (D2C)")
     return models
 
-
 def identify_risks(industry: str, text: str) -> List[str]:
     t = text.lower()
     risks = []
@@ -188,7 +190,6 @@ def identify_risks(industry: str, text: str) -> List[str]:
     if len(risks) == 0:
         risks.append("Need to validate real customer demand and willingness to pay.")
     return risks
-
 
 def suggest_next_steps(pred_label: str, goal: str) -> List[str]:
     if goal == "Market validation":
@@ -210,7 +211,6 @@ def suggest_next_steps(pred_label: str, goal: str) -> List[str]:
             "Collect early traction metrics (signups, waitlist, pilots)."
         ]
 
-    # Tweak depending on model label
     if pred_label == "High":
         base.insert(0, "Double down: your idea seems promising, focus on execution.")
     elif pred_label == "Medium":
@@ -220,37 +220,38 @@ def suggest_next_steps(pred_label: str, goal: str) -> List[str]:
 
     return base
 
-
 def google_search_link(query: str) -> str:
     return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
-
 
 # -----------------------------
 # 4. UI Layout
 # -----------------------------
-
+# Sidebar – general info
 with st.sidebar:
-    st.header("About")
+    st.header("About this tool")
     st.write(
-        "This tool uses **TF-IDF + Logistic Regression** to classify ideas into "
-        "*High / Medium / Low* potential, and combines that with interpretable "
-        "NLP features for explanation."
+        "This is a **machine learning–based** evaluator for business ideas. "
+        "It uses a **TF-IDF + Logistic Regression** model trained on **10,000 simulated** sample startup "
+        "ideas (High / Medium / Low potential)."
     )
-    st.write("Tech stack:")
-    st.code("Python · Streamlit · scikit-learn · TF-IDF · LogisticRegression")
+    st.write("Technologies:")
+    st.code("Python · Streamlit · scikit-learn · TF-IDF · Logistic Regression", language="bash")
 
-    with st.expander("Model validation (for viva)"):
+    with st.expander("Model details (for viva)"):
+        st.write("Model: Logistic Regression on TF-IDF features.")
+        st.write("Data Size: 10,000 Simulated Rows.")
+        st.write("Labels: High, Medium, Low potential.")
         st.json(model_report, expanded=False)
 
+# Main inputs & outputs
+input_col, result_col = st.columns([1.1, 1.3])
 
-left_col, right_col = st.columns([1.1, 1.4])
-
-with left_col:
+with input_col:
     st.subheader("1️⃣ Input your idea")
 
     title = st.text_input(
         "Business Idea Title",
-        placeholder="Subscription-based healthy tiffin service for office workers"
+        placeholder="e.g., Subscription-based healthy tiffin service for office workers"
     )
     desc = st.text_area(
         "Describe your idea",
@@ -270,7 +271,7 @@ with left_col:
 
     analyze_btn = st.button("🔍 Analyze Idea")
 
-with right_col:
+with result_col:
     st.subheader("2️⃣ AI Evaluation & Insights")
 
     if analyze_btn:
@@ -280,76 +281,103 @@ with right_col:
             full_text = f"{title} {desc}"
             combined = f"{title} {desc} [INDUSTRY] {industry}"
 
-            # ML prediction
+            # 1) ML model prediction
             pred_label = model.predict([combined])[0]
             proba = model.predict_proba([combined])[0]
             classes = model.classes_
 
-            # Score from probabilities
+            # Overall score from probabilities
             label_to_weight = {"Low": 0.3, "Medium": 0.6, "High": 1.0}
-            weighted_score = sum(label_to_weight[c] * p for c, p in zip(classes, proba))
+            weighted_score = sum(
+                label_to_weight[c] * p for c, p in zip(classes, proba)
+            )
             overall_score = int(weighted_score * 100)
 
-            # Explanation features
+            # 2) Explanation features
             feature_details, keywords = compute_explanatory_features(title, desc, industry)
             models = suggest_business_models(full_text)
             risks = identify_risks(industry, full_text)
             steps = suggest_next_steps(pred_label, goal)
 
-            # Top metrics
+            # --- Text-only output (removing charts from here) ---
             top1, top2 = st.columns(2)
             with top1:
                 st.metric("Overall Feasibility Score", f"{overall_score}/100")
             with top2:
                 st.metric("Predicted Category", pred_label)
-
-            # Probability chart
-            st.markdown("#### Class probabilities (ML output)")
-            prob_df = pd.DataFrame({
-                "Category": classes,
-                "Probability": np.round(proba * 100, 1)
-            }).sort_values("Probability", ascending=True)
-            st.bar_chart(
-                prob_df.set_index("Category"),
-                height=200
-            )
-
-            # Feature breakdown chart
-            st.markdown("#### Feature breakdown (explanation)")
-            feat_df = pd.DataFrame(
-                {
-                    "Feature": [k for k in feature_details.keys() if k != "Length (words)"],
-                    "Score": [feature_details[k] for k in feature_details.keys() if k != "Length (words)"]
-                }
-            )
-            st.bar_chart(
-                feat_df.set_index("Feature"),
-                height=220
-            )
-            st.write(f"- Length: **{feature_details['Length (words)']} words**")
-
+            
+            # Feature breakdown (Text only)
+            st.markdown("#### Feature Breakdown (for explanation)")
+            fb1, fb2 = st.columns(2)
+            with fb1:
+                st.write(f"- Keyword richness: **{feature_details['Keyword richness']} / 100**")
+                st.write(f"- Industry demand: **{feature_details['Industry demand']} / 100**")
+            with fb2:
+                st.write(f"- Novelty (less generic): **{feature_details['Novelty']} / 100**")
+                st.write(f"- Simplicity / clarity: **{feature_details['Simplicity']} / 100**")
+                st.write(f"- Length: **{feature_details['Length (words)']} words**")
+            
             # Keywords
             st.markdown("#### Extracted keywords")
             if keywords:
                 st.write(", ".join(f"`{k}`" for k in keywords))
             else:
                 st.write("_No strong keywords extracted. Try using more specific, concrete words._")
-
+            
             # Suggested business models
             st.markdown("#### Suggested business model(s)")
             st.write(", ".join(models))
-
+            
             # Risks
             st.markdown("#### Key risks")
             for r in risks:
                 st.write(f"- {r}")
-
-            # Next steps based on goal
+            
+            # Recommended next steps
             st.markdown("#### Recommended next steps")
             for s in steps:
                 st.write(f"- {s}")
+            
+            # --- Dedicated Visualization Link Section (New) ---
+            st.markdown("---")
+            st.markdown("### 📊 Dedicated Visual Analysis Dashboard")
+            st.markdown(
+                "Click the expander below to see the **ML Probability Chart** and the **Feature Breakdown Chart**."
+            )
+            st.markdown(
+                "*(You can use a placeholder external URL like: **[ai-idea-validator.app/visual-dashboard](https://ai-business-idea-validator.streamlit.app/visual-dashboard)** in your report.)*"
+            )
 
-            # Google links (real-time research helpers)
+            # Charts are now hidden inside this expander, simulating a separate link/page
+            with st.expander("📈 Show Visual Dashboard"):
+                st.subheader("Visual Analysis: Model & Features")
+                
+                # 1. Probability chart
+                st.markdown("##### Class Probabilities (ML Output)")
+                prob_df = pd.DataFrame({
+                    "Category": classes,
+                    "Probability": np.round(proba * 100, 1)
+                }).sort_values("Probability", ascending=True)
+                st.bar_chart(
+                    prob_df.set_index("Category"),
+                    height=200
+                )
+
+                # 2. Feature breakdown chart
+                st.markdown("##### Feature Breakdown (Explanation Scores)")
+                feat_df = pd.DataFrame(
+                    {
+                        "Feature": [k for k in feature_details.keys() if k != "Length (words)"],
+                        "Score": [feature_details[k] for k in feature_details.keys() if k != "Length (words)"]
+                    }
+                )
+                st.bar_chart(
+                    feat_df.set_index("Feature"),
+                    height=220
+                )
+                
+            # Quick Google research links
+            st.markdown("---")
             st.markdown("#### 🔗 Quick Google research links")
             comp_query = f"{industry} {title} competitors"
             market_query = f"{industry} market size report"
@@ -363,27 +391,17 @@ with right_col:
             with st.expander("Technical explanation (for report / viva)"):
                 st.markdown(
                     """
-                    **Model pipeline**
+                    **Model Architecture**
 
-                    - Input text is combined with the industry tag.
-                    - Features are generated using **TF-IDF vectorization** (unigrams + bigrams).
-                    - A **Logistic Regression** classifier is trained on labeled ideas
-                      (High / Medium / Low potential).
+                    - The model is trained on a **10,000-row simulated dataset** of labeled business ideas.
+                    - Text is converted into numerical features using **TF-IDF vectorization**.
+                    - A **Logistic Regression** classifier is used to output a predicted category (High/Medium/Low) and **class probabilities**.
 
-                    **Outputs**
+                    **Outputs & Interpretation**
 
-                    - Class probabilities (used to draw the bar chart).
-                    - A weighted overall feasibility score (0–100).
-                    - Additional hand-crafted NLP features (keyword richness, industry demand,
-                      novelty, simplicity) are calculated to keep the model explainable.
-
-                    **Why this is AI / ML and not just rules**
-
-                    - The TF-IDF + Logistic Regression model actually learns from example data
-                      instead of using only fixed if-else rules.
-                    - The more (and better) labeled ideas you add to the dataset, the smarter
-                      and more accurate the model becomes.
+                    - **Feasibility Score:** Calculated as a weighted sum of the class probabilities.
+                    - **Explainable Features (XAI):** Hand-crafted NLP features (Keyword richness, Novelty, etc.) are computed alongside the ML model to provide a clear, rule-based explanation for the score.
                     """
                 )
     else:
-        st.info("Enter your idea on the left and click **Analyze Idea** to see charts and AI insights here.")
+        st.info("Fill in your idea on the left and click **Analyze Idea** to see the model output here.")
