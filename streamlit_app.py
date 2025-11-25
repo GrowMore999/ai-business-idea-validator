@@ -61,11 +61,37 @@ CSS = """
 .metric-number { font-size:48px; font-weight:700; color:var(--color-primary); }
 .pill { padding:6px 12px; border-radius:999px; font-size:13px; font-weight:600; }
 .chips { display:flex; gap:8px; flex-wrap:wrap; }
-.chip { padding:6px 10px; background:#F3F7FF; border-radius:999px; font-size:13px; color:var(--color-neutral-900); box-shadow: 0 1px 0 rgba(0,0,0,0.02); }
-.keyword { background:#F7F9FF; padding:6px 10px; border-radius:999px; font-family:monospace; font-size:13px; }
+
+/* --- Hide Empty Chips --- */
+.chip:empty,
+.keyword:empty {
+    display: none !important;
+}
+
+/* --- Highlight Chips with Content --- */
+.chip {
+    padding:6px 10px;
+    background: #d6e4ff !important;
+    color: #0f1a33 !important;
+    border: 1px solid #A0B9FF;
+    border-radius:999px;
+    font-size:13px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.keyword {
+    padding:6px 10px;
+    background: #FFEFD6 !important;
+    color: #4A2A00 !important;
+    border: 1px solid #FFC78A;
+    border-radius:999px;
+    font-family:monospace;
+    font-size:13px;
+}
+
 .btn { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:10px; cursor:pointer; border:none; }
 .btn-primary { background:var(--color-primary); color:white; box-shadow: 0 6px 18px rgba(15,98,254,0.12); }
-.btn-ghost { background:transparent; border:1px solid #E6EEF8; color:var(--color-neutral-900); }
+.btn-ghost { background:#2C3544; border:1px solid #3A4555; color:#E5E7EB; }
 :focus { outline: 3px solid rgba(15,98,254,0.14); outline-offset: 3px; border-radius: 6px; }
 
 @media (max-width: 980px) { .app-shell { grid-template-columns: 1fr; } }
@@ -283,7 +309,7 @@ with col_b:
     if reset_btn:
         st.session_state["title_input"] = ""
         st.session_state["desc_input"] = ""
-        st.experimental_rerun()
+        st.rerun()
 
 st.markdown("<div class='small' style='margin-top:12px'>Tip: Use concrete nouns & numbers. E.g., '50 corporate clients in Mumbai'.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)  # close input-card
@@ -358,16 +384,18 @@ if analyze_btn:
                 if keywords:
                     chip_html = "<div class='chips' style='margin-top:8px'>"
                     for k in keywords:
-                        chip_html += f"<div class='keyword' role='note' tabindex='0'>{k}</div>"
+                        if k.strip():  # only print if not empty
+                            chip_html += f"<div class='keyword'>{k}</div>"
                     chip_html += "</div>"
                     st.markdown(chip_html, unsafe_allow_html=True)
                 else:
-                    st.write("_No strong keywords extracted. Try using more specific, concrete words._")
+                    st.info("No strong keywords extracted. Try using more specific, concrete words.")
                 st.markdown("<hr style='margin-top:12px;margin-bottom:12px'/>", unsafe_allow_html=True)
                 st.markdown("<strong>Suggested business model(s)</strong>")
                 model_chips = "<div style='margin-top:8px' class='chips'>"
                 for m in models:
-                    model_chips += f"<div class='chip' tabindex='0'>{m}</div>"
+                    if m.strip():  # only print if not empty
+                        model_chips += f"<div class='chip'>{m}</div>"
                 model_chips += "</div>"
                 st.markdown(model_chips, unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
