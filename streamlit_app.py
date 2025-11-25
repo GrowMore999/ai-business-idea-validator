@@ -1,17 +1,7 @@
 # streamlit_app.py
 """
-AI Business Idea Validator - Modern Streamlit UI
-Single-file app: paste/replace your existing streamlit_app.py with this file.
-
-Features:
-- Preserves ML model (TF-IDF + LogisticRegression) trained on internal demo data
-- Modern left input panel / right results panel layout
-- Plotly charts for probabilities & feature breakdown
-- Keyword chips, suggested business models, risks, actionable next steps
-- Accessibility-friendly form labels and keyboard focus styles
-- CSS tokens (Tailwind-friendly variable names) included at top
-- Lightweight animations: count-up score, skeleton loading for charts
-- Export buttons to copy content / download CSV of probabilities
+AI Business Idea Validator - Streamlit UI (Plotly removed)
+Use this file if plotly is not installed. Uses Streamlit's native st.bar_chart instead.
 """
 
 import time
@@ -23,20 +13,19 @@ from typing import List, Tuple, Dict
 import numpy as np
 import pandas as pd
 import streamlit as st
-import plotly.express as px
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
+import re  # used in preprocessing
 
 # -----------------------------
 # App config & CSS tokens
 # -----------------------------
 st.set_page_config(page_title="AI Business Idea Validator", layout="wide", initial_sidebar_state="collapsed")
 
-# Design tokens (Tailwind-friendly variable names)
 CSS = """
 :root{
   --color-primary: #0F62FE;
@@ -50,157 +39,41 @@ CSS = """
   --space-6: 24px;
   --shadow-soft: 0 6px 18px rgba(16,20,24,0.06);
   --shadow-card: 0 8px 30px rgba(16,20,24,0.08);
-  --glass: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(255,255,255,0.6));
 }
 
-/* Reset some streamlit defaults for a cleaner look */
+/* Layout */
 .reportview-container .main .block-container{
   padding-top: 18px;
   padding-left: 20px;
   padding-right: 20px;
 }
+.header { display:flex; align-items:center; gap: 14px; margin-bottom: 8px; }
+.brand { display:flex; align-items:center; gap:12px; }
+.logo { width:44px; height:44px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; background:var(--color-primary); color:white; font-weight:700; box-shadow: var(--shadow-soft); }
 
-/* Header */
-.header {
-  display:flex;
-  align-items:center;
-  gap: 14px;
-  margin-bottom: 8px;
-}
-.brand {
-  display:flex;
-  align-items:center;
-  gap:12px;
-}
-.logo {
-  width:44px;
-  height:44px;
-  border-radius:10px;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  background:var(--color-primary);
-  color:white;
-  font-weight:700;
-  box-shadow: var(--shadow-soft);
-}
+/* Grid */
+.app-shell { display:grid; grid-template-columns: 360px 1fr; gap: 28px; align-items:start; }
+.input-card { background:var(--bg-surface); border-radius: var(--radius); padding: var(--space-6); box-shadow: var(--shadow-card); min-height: 420px; }
+.small { font-size:13px; color:var(--color-neutral-500); }
+.results { display:flex; flex-direction:column; gap: 18px; }
+.result-card { background:var(--bg-surface); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow-soft); }
+.metric-big { display:flex; align-items:center; gap: 20px; }
+.metric-number { font-size:48px; font-weight:700; color:var(--color-primary); }
+.pill { padding:6px 12px; border-radius:999px; font-size:13px; font-weight:600; }
+.chips { display:flex; gap:8px; flex-wrap:wrap; }
+.chip { padding:6px 10px; background:#F3F7FF; border-radius:999px; font-size:13px; color:var(--color-neutral-900); box-shadow: 0 1px 0 rgba(0,0,0,0.02); }
+.keyword { background:#F7F9FF; padding:6px 10px; border-radius:999px; font-family:monospace; font-size:13px; }
+.btn { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:10px; cursor:pointer; border:none; }
+.btn-primary { background:var(--color-primary); color:white; box-shadow: 0 6px 18px rgba(15,98,254,0.12); }
+.btn-ghost { background:transparent; border:1px solid #E6EEF8; color:var(--color-neutral-900); }
+:focus { outline: 3px solid rgba(15,98,254,0.14); outline-offset: 3px; border-radius: 6px; }
 
-/* Layout columns */
-.app-shell {
-  display:grid;
-  grid-template-columns: 360px 1fr;
-  gap: 28px;
-  align-items:start;
-}
-
-/* Left input card */
-.input-card {
-  background:var(--bg-surface);
-  border-radius: var(--radius);
-  padding: var(--space-6);
-  box-shadow: var(--shadow-card);
-  min-height: 420px;
-}
-.small {
-  font-size:13px;
-  color:var(--color-neutral-500);
-}
-
-/* Right results card */
-.results {
-  display:flex;
-  flex-direction:column;
-  gap: 18px;
-}
-.result-card {
-  background:var(--bg-surface);
-  border-radius: var(--radius);
-  padding: 18px;
-  box-shadow: var(--shadow-soft);
-}
-
-/* Metric big */
-.metric-big {
-  display:flex;
-  align-items:center;
-  gap: 20px;
-}
-.metric-number {
-  font-size:48px;
-  font-weight:700;
-  color:var(--color-primary);
-}
-.pill {
-  padding:6px 12px;
-  border-radius:999px;
-  font-size:13px;
-  font-weight:600;
-}
-
-/* Chips / pills */
-.chips {
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-}
-.chip {
-  padding:6px 10px;
-  background:#F3F7FF;
-  border-radius:999px;
-  font-size:13px;
-  color:var(--color-neutral-900);
-  box-shadow: 0 1px 0 rgba(0,0,0,0.02);
-}
-
-/* Keywords */
-.keyword {
-  background:#F7F9FF;
-  padding:6px 10px;
-  border-radius:999px;
-  font-family:monospace;
-  font-size:13px;
-}
-
-/* Buttons */
-.btn {
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  padding:8px 14px;
-  border-radius:10px;
-  cursor:pointer;
-  border:none;
-}
-.btn-primary {
-  background:var(--color-primary);
-  color:white;
-  box-shadow: 0 6px 18px rgba(15,98,254,0.12);
-}
-.btn-ghost {
-  background:transparent;
-  border:1px solid #E6EEF8;
-  color:var(--color-neutral-900);
-}
-
-/* Accessibility: focus ring */
-:focus {
-  outline: 3px solid rgba(15,98,254,0.14);
-  outline-offset: 3px;
-  border-radius: 6px;
-}
-
-/* Responsive */
-@media (max-width: 980px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-  }
-}
+@media (max-width: 980px) { .app-shell { grid-template-columns: 1fr; } }
 """
-
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 # -----------------------------
-# Training data and model (internal demo)
+# Training data and model
 # -----------------------------
 @st.cache_resource(show_spinner=False)
 def get_training_data() -> pd.DataFrame:
@@ -238,7 +111,7 @@ def train_model() -> Tuple[Pipeline, Dict]:
 model, model_report = train_model()
 
 # -----------------------------
-# XAI helper logic (preserved + polished)
+# XAI helpers
 # -----------------------------
 INDUSTRY_DEMAND = {
     "Food & Beverage": 0.8,
@@ -250,19 +123,13 @@ INDUSTRY_DEMAND = {
     "Software/SaaS": 0.78,
     "Other": 0.5
 }
-
-GENERIC_WORDS = {
-    "app", "website", "platform", "service", "online", "digital",
-    "solution", "system", "business", "idea", "startup", "portal"
-}
+GENERIC_WORDS = {"app", "website", "platform", "service", "online", "digital", "solution", "system", "business", "idea", "startup", "portal"}
 
 def preprocess(text: str) -> str:
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
-
-import re  # ensure re is available after top
 
 def extract_keywords(text: str, top_k: int = 7) -> List[str]:
     text = preprocess(text)
@@ -345,7 +212,7 @@ def suggest_next_steps(pred_label: str, goal: str) -> List[str]:
             "Identify at least 2–3 clear differentiators for your idea.",
             "Check pricing and positioning of similar tools."
         ]
-    else:  # Funding readiness
+    else:
         base = [
             "Prepare a 1-page problem/solution/market summary.",
             "Estimate basic unit economics (how you make money).",
@@ -363,11 +230,11 @@ def google_search_link(query: str) -> str:
     return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
 
 # -----------------------------
-# Sidebar: brief model info + controls
+# Sidebar + header
 # -----------------------------
 with st.sidebar:
     st.markdown("<div style='display:flex;align-items:center;gap:12px'><div class='logo'>A</div><div><strong>AI Business Idea Validator</strong><div class='small'>Demo • TF-IDF + Logistic Regression</div></div></div>", unsafe_allow_html=True)
-    st.caption("Design tokens: primary color, accent, neutral greys. This demo uses a small internal dataset for stability.")
+    st.caption("Demo model uses small internal dataset for stability.")
     st.write("---")
     if model_report:
         with st.expander("Model details (for viva)"):
@@ -375,24 +242,13 @@ with st.sidebar:
             st.write(f"Data Size: {len(get_training_data())} rows (internal demo set).")
             st.json(model_report, expanded=False)
     st.write("---")
-    st.markdown("**Export / Handoff**")
     if st.button("Download design_tokens.json"):
         tokens = {
-            "colors": {
-                "primary": "#0F62FE",
-                "accent": "#FF8A65",
-                "neutral-900": "#101418",
-                "neutral-500": "#6B7280",
-                "bg-surface": "#FFFFFF"
-            },
-            "spacing": {"4": 16, "6": 24},
-            "radius": 12
+            "colors": {"primary": "#0F62FE", "accent": "#FF8A65", "neutral-900": "#101418"},
+            "spacing": {"4": 16, "6": 24}, "radius": 12
         }
         st.download_button("Download JSON", data=json.dumps(tokens, indent=2), file_name="design_tokens.json", mime="application/json")
 
-# -----------------------------
-# Main app header
-# -----------------------------
 st.markdown("""
 <div class="header">
   <div class="brand">
@@ -406,15 +262,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# Main layout container
+# Main layout
 # -----------------------------
 st.markdown("<div class='app-shell'>", unsafe_allow_html=True)
 
-# ---------- Left input column ----------
 st.markdown("<div class='input-card' role='region' aria-labelledby='input-title'>", unsafe_allow_html=True)
 st.markdown("<h3 id='input-title'>1️⃣ Input your idea</h3>", unsafe_allow_html=True)
 
-# Accessible form inputs
 title = st.text_input("Business Idea Title", placeholder="e.g., Subscription-based healthy tiffin service for office workers", key="title_input", help="Short, specific title describing your idea in one line.")
 desc = st.text_area("Describe your idea", placeholder="What problem do you solve? Who is the customer? How does it work?", height=160, key="desc_input", help="Include customer, problem, and how you solve it. Aim for 40-120 words.")
 industry = st.selectbox("Industry", ["Food & Beverage", "E-commerce", "Home Services", "Education","Healthcare", "Fintech", "Software/SaaS", "Other"], index=0)
@@ -431,28 +285,20 @@ with col_b:
         st.session_state["desc_input"] = ""
         st.experimental_rerun()
 
-# small helper links
-st.markdown("<div class='small' style='margin-top:12px'>Tip: Use concrete nouns & numbers. E.g., '50 corporate clients in Mumbai' is better than 'many clients'.</div>", unsafe_allow_html=True)
+st.markdown("<div class='small' style='margin-top:12px'>Tip: Use concrete nouns & numbers. E.g., '50 corporate clients in Mumbai'.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)  # close input-card
 
-# ---------- Right results column ----------
 st.markdown("<div class='results' role='region' aria-live='polite'>", unsafe_allow_html=True)
+st.markdown("<div class='result-card'><div style='display:flex;justify-content:space-between;align-items:center'><div><h3 style='margin:0'>2️⃣ AI Evaluation & Insights</h3><div class='small'>Actionable guidance with model + rule-based explanations</div></div></div></div>", unsafe_allow_html=True)
 
-st.markdown("<div class='result-card'>", unsafe_allow_html=True)
-st.markdown("<div style='display:flex;justify-content:space-between;align-items:center'><div><h3 style='margin:0'>2️⃣ AI Evaluation & Insights</h3><div class='small'>Actionable guidance with model + rule-based explanations</div></div><div style='display:flex;gap:8px;align-items:center'></div></div>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
-
-# reactive area for results
 results_placeholder = st.empty()
 
 if analyze_btn:
     if not title.strip() or not desc.strip():
         st.warning("Please fill in both the title and description.")
     else:
-        # show skeleton loader
         with results_placeholder.container():
-            st.markdown("<div class='result-card'><div style='display:flex;gap:12px;align-items:center'><div style='flex:1'><div style='height:22px;width:70%;background:#eef3ff;border-radius:8px;margin-bottom:14px'></div><div style='height:14px;width:40%;background:#f3f5f7;border-radius:6px;margin-bottom:22px'></div><div style='height:160px;background:#fbfcfe;border-radius:10px'></div></div></div></div>", unsafe_allow_html=True)
-        # simulate quick work + allow UI to update
+            st.markdown("<div class='result-card'><div style='height:22px;width:70%;background:#eef3ff;border-radius:8px;margin-bottom:14px'></div><div style='height:14px;width:40%;background:#f3f5f7;border-radius:6px;margin-bottom:22px'></div><div style='height:160px;background:#fbfcfe;border-radius:10px'></div></div>", unsafe_allow_html=True)
         time.sleep(0.45)
 
         full_text = f"{title} {desc}"
@@ -469,21 +315,16 @@ if analyze_btn:
         risks = identify_risks(industry, full_text)
         steps = suggest_next_steps(pred_label, goal)
 
-        # Build DataFrames for charts
         prob_df = pd.DataFrame({"Category": classes, "Probability": np.round(proba * 100, 1)})
         feat_items = {k: v for k, v in feature_details.items() if k != "Length (words)"}
         feat_df = pd.DataFrame({"Feature": list(feat_items.keys()), "Score": list(feat_items.values())})
 
-        # Render results (main)
         with results_placeholder.container():
             st.markdown("<div class='result-card' role='region' aria-label='Top metrics'>", unsafe_allow_html=True)
-            # Top metrics: score + category
             col1, col2 = st.columns([1.6, 1])
             with col1:
-                # Animated count-up for score
                 score_holder = st.empty()
                 score_holder.markdown(f"<div class='metric-big'><div><div class='metric-number'>{overall_score}</div><div class='small'>Overall Feasibility Score</div></div><div style='display:flex;flex-direction:column;align-items:flex-start;gap:8px'><div class='pill' style='background:#EBF4FF;color:var(--color-primary)'>Predicted: <strong style='margin-left:8px'>{pred_label}</strong></div><div class='small'>Model confidence: {int(round(max(proba)*100))}%</div></div></div>", unsafe_allow_html=True)
-                # score count-up effect (progressive)
                 for v in range(0, overall_score + 1, max(1, overall_score // 20 or 1)):
                     score_holder.markdown(f"<div class='metric-big'><div><div class='metric-number'>{v}</div><div class='small'>Overall Feasibility Score</div></div><div style='display:flex;flex-direction:column;align-items:flex-start;gap:8px'><div class='pill' style='background:#EBF4FF;color:var(--color-primary)'>Predicted: <strong style='margin-left:8px'>{pred_label}</strong></div><div class='small'>Model confidence: {int(round(max(proba)*100))}%</div></div></div>", unsafe_allow_html=True)
                     time.sleep(0.01)
@@ -491,34 +332,26 @@ if analyze_btn:
                 st.markdown("<div style='display:flex;flex-direction:column;gap:8px;align-items:flex-end'><button class='btn btn-ghost' onclick='window.print()'>Print report</button></div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # Second row: charts
+            # Charts using Streamlit native st.bar_chart
             st.markdown("<div style='display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px'>", unsafe_allow_html=True)
-            # Probabilities chart
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
                 st.markdown("<div style='display:flex;justify-content:space-between;align-items:center'><strong>Class Probabilities</strong><div class='small'>Model output</div></div>", unsafe_allow_html=True)
-                fig_p = px.bar(prob_df.sort_values("Probability"), x="Probability", y="Category", orientation="h", text="Probability", range_x=[0, 100])
-                fig_p.update_layout(margin=dict(t=12, b=12, l=6, r=6), height=220, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-                fig_p.update_traces(marker_color=[ "#FFB69A" if c=="Low" else ("#FF8A65" if c=="Medium" else "#0F62FE") for c in prob_df["Category"]])
-                st.plotly_chart(fig_p, use_container_width=True)
-                # Export CSV
+                prob_plot_df = prob_df.set_index("Category")
+                st.bar_chart(prob_plot_df)
                 csv_buf = prob_df.to_csv(index=False).encode("utf-8")
                 st.download_button("Download probabilities CSV", data=csv_buf, file_name="probabilities.csv", mime="text/csv")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # Feature breakdown chart
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
                 st.markdown("<div style='display:flex;justify-content:space-between;align-items:center'><strong>Feature Breakdown</strong><div class='small'>Explainable features</div></div>", unsafe_allow_html=True)
-                fig_f = px.bar(feat_df.sort_values("Score"), x="Score", y="Feature", orientation="h", text="Score", range_x=[0, 100])
-                fig_f.update_layout(margin=dict(t=12, b=12, l=6, r=6), height=220, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig_f, use_container_width=True)
+                feat_plot_df = feat_df.set_index("Feature")
+                st.bar_chart(feat_plot_df)
                 st.markdown("</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # Third row: details (keywords, models, risks, steps)
             st.markdown("<div style='display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px'>", unsafe_allow_html=True)
-            # Left detail column
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
                 st.markdown("<strong>Extracted keywords</strong>")
@@ -539,7 +372,6 @@ if analyze_btn:
                 st.markdown(model_chips, unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # Right detail column
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
                 st.markdown("<strong>Key risks</strong>")
@@ -552,7 +384,6 @@ if analyze_btn:
                 st.markdown("</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # Quick research links
             st.markdown("<div class='result-card' style='display:flex;flex-direction:column;gap:8px'>", unsafe_allow_html=True)
             st.markdown("<strong>Quick research links</strong>", unsafe_allow_html=True)
             comp_query = f"{industry} {title} competitors"
@@ -567,27 +398,20 @@ if analyze_btn:
             st.markdown(links_html, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # Technical explanation expander (viva / handoff)
             with st.expander("Technical explanation (for report / viva)"):
                 st.markdown("""
                 **Model architecture**
                 - TF-IDF vectorization of title + description + industry.
                 - Logistic Regression classifier outputs class probabilities.
-                - Rule-based XAI features (Keyword richness, Novelty, Simplicity, Industry demand) for interpretability.
+                - Rule-based XAI features for interpretability.
 
-                **Handoff notes (developer)**
+                **Handoff notes**
                 - Design tokens available via sidebar download.
-                - Charts use Plotly; replace with your preferred charting library if needed.
+                - Charts use Streamlit native bar_chart (no external libs required).
                 - Accessibility: form inputs include descriptive labels and help text.
                 """)
 
-# close results & app-shell wrappers
 st.markdown("</div>", unsafe_allow_html=True)  # close results
 st.markdown("</div>", unsafe_allow_html=True)  # close app-shell
 
-# Footer / small credits
-st.markdown("""
-<div style="margin-top:18px;color:var(--color-neutral-500);font-size:13px">
-Designed for founders • Demo model uses a small internal dataset • Replace demo data with your GitHub dataset for production.
-</div>
-""", unsafe_allow_html=True)
+st.markdown("""<div style="margin-top:18px;color:var(--color-neutral-500);font-size:13px">Designed for founders • Demo model uses a small internal dataset • Replace demo data with your GitHub dataset for production.</div>""", unsafe_allow_html=True)
