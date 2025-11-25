@@ -79,39 +79,32 @@ def get_training_data() -> pd.DataFrame:
 # 2. Model training (TF-IDF + Logistic Regression)
 # -----------------------------
 @st.cache_resource(show_spinner=False)
-def train_model() -> Tuple[Pipeline, Dict[str, Dict]]:
-    with st.spinner("Training ML Model on data..."):
-        df = get_training_data()
-        
-        # Handle empty/missing data scenario
-        if df.empty:
-            return None, {}
+def get_training_data() -> pd.DataFrame:
+    """Reads the labeled business ideas from the new, appropriate CSV file."""
+    
+    # Define the new filename
+    FILE_PATH = "appropriate_startup_data.csv" # <-- MUST BE THIS NAME
 
-        X = df["combined"]
-        y = df["label"]
+    try:
+        df = pd.read_csv(FILE_PATH)
+    except FileNotFoundError:
+        st.error(f"Error: Training data file '{FILE_PATH}' not found. Please ensure you have uploaded it to GitHub.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading CSV file: {e}")
+        return pd.DataFrame()
 
-        # Using a smaller test_size for better training on large data
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.1, random_state=42, stratify=y
-        )
-
-        pipeline = Pipeline([
-            ("tfidf", TfidfVectorizer(ngram_range=(1, 2), min_df=1)),
-            ("clf", LogisticRegression(max_iter=500)) 
-        ])
-        
-        pipeline.fit(X_train, y_train) 
-
-        # Evaluate on validation set
-        y_pred = pipeline.predict(X_val)
-        report_dict = classification_report(
-            y_val, y_pred, output_dict=True, zero_division=0
-        )
-
-        return pipeline, report_dict
-
-
-model, model_report = train_model()
+    # Validation: Ensure the necessary columns exist (text, industry, label)
+    REQUIRED_COLS = ["text", "industry", "label"]
+    if not all(col in df.columns for col in REQUIRED_COLS):
+        st.error(f"Error: CSV must contain columns: {REQUIRED_COLS}. Found: {list(df.columns)}")
+        return pd.DataFrame()
+    
+    # Prepare the combined feature for the model
+    df["combined"] = df["text"].astype(str) + " [INDUSTRY] " + df["industry"].astype(str)
+    
+    st.sidebar.success(f"Model successfully trained on {len(df)} real data rows.")
+    return df
 
 # -----------------------------
 # 3. Auxiliary "AI explanation" features (Rules-based AI for XAI)
