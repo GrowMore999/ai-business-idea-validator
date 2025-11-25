@@ -380,7 +380,7 @@ if analyze_btn:
             st.markdown("<div style='display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px'>", unsafe_allow_html=True)
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
-                st.markdown("<strong>Extracted keywords</strong>")
+                st.markdown("Extracted keywords")
                 if keywords:
                     chip_html = "<div class='chips' style='margin-top:8px'>"
                     for k in keywords:
@@ -391,7 +391,7 @@ if analyze_btn:
                 else:
                     st.info("No strong keywords extracted. Try using more specific, concrete words.")
                 st.markdown("<hr style='margin-top:12px;margin-bottom:12px'/>", unsafe_allow_html=True)
-                st.markdown("<strong>Suggested business model(s)</strong>")
+                st.markdown("Suggested business model(s)")
                 model_chips = "<div style='margin-top:8px' class='chips'>"
                 for m in models:
                     if m.strip():  # only print if not empty
@@ -402,7 +402,7 @@ if analyze_btn:
 
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
-                st.markdown("<strong>Key risks</strong>")
+                st.markdown("Key risks")
                 for r in risks:
                     st.markdown(f"- {r}")
                 st.markdown("<hr style='margin-top:12px;margin-bottom:12px'/>", unsafe_allow_html=True)
