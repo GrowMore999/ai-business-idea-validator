@@ -42,11 +42,7 @@ CSS = """
 }
 
 /* Layout */
-.reportview-container .main .block-container{
-  padding-top: 18px;
-  padding-left: 20px;
-  padding-right: 20px;
-}
+
 .header { display:flex; align-items:center; gap: 14px; margin-bottom: 8px; }
 .brand { display:flex; align-items:center; gap:12px; }
 .logo { width:44px; height:44px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; background:var(--color-primary); color:white; font-weight:700; box-shadow: var(--shadow-soft); }
@@ -392,7 +388,7 @@ if analyze_btn:
             st.markdown("<div style='display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px'>", unsafe_allow_html=True)
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
-                st.markdown("<strong>Extracted keywords</strong>")
+                st.markdown("Extracted keywords")
                 if keywords:
                     chip_html = "<div class='chips' style='margin-top:8px'>"
                     for k in keywords:
@@ -403,7 +399,7 @@ if analyze_btn:
                 else:
                     st.info("No strong keywords extracted. Try using more specific, concrete words.")
                 st.markdown("<hr style='margin-top:12px;margin-bottom:12px'/>", unsafe_allow_html=True)
-                st.markdown("<strong>Suggested business model(s)</strong>")
+                st.markdown("Suggested business model(s)")
                 model_chips = "<div style='margin-top:8px' class='chips'>"
                 for m in models:
                     if m.strip():
@@ -415,11 +411,11 @@ if analyze_btn:
             # risks, steps, links, etc (unchanged)
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
-                st.markdown("<strong>Key risks</strong>")
+                st.markdown("Key risks")
                 for r in risks:
                     st.markdown(f"- {r}")
                 st.markdown("<hr style='margin-top:12px;margin-bottom:12px'/>", unsafe_allow_html=True)
-                st.markdown("<strong>Recommended next steps</strong>")
+                st.markdown("Recommended next steps")
                 for i, s in enumerate(steps, 1):
                     st.markdown(f"{i}. {s}")
                 st.markdown("</div>", unsafe_allow_html=True)
