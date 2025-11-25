@@ -22,89 +22,68 @@ st.title("AI Business Idea Validator")
 st.caption("ML + NLP based scoring and analysis for startup / business ideas")
 
 # -----------------------------
-# 1. Training data (Reads 10,000-row CSV from GitHub)
+# 1. Training data (Small Internal Dataset - GUARANTEED TO RUN)
 # -----------------------------
 @st.cache_resource(show_spinner=False)
 def get_training_data() -> pd.DataFrame:
-    """
-    Reads the 10,000-row synthetic dataset and transforms the 'Success'
-    column into the required 'High', 'Medium', 'Low' labels for training.
-    """
-    
-    # 1. Define the new filename
-    FILE_PATH = "synthetic_startups_10000.csv"
+    """Uses a small, hardcoded dataset for stable demonstration."""
+    data = [
+        # High potential examples (Strong Keywords, High Demand Industry)
+        ("Subscription-based healthy meal prep for office workers", "Food & Beverage", "High"),
+        ("B2B SaaS for automating invoice reconciliation for SMEs", "Software/SaaS", "High"),
+        ("Telehealth platform for remote mental health consultations", "Healthcare", "High"),
+        ("Fintech app for salary advances with employer integration", "Fintech", "High"),
 
-    try:
-        df = pd.read_csv(FILE_PATH)
-    except FileNotFoundError:
-        st.error(f"Error: Training data file '{FILE_PATH}' not found in the repository. Please ensure you have uploaded it to GitHub.")
-        return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Error loading CSV file: {e}")
-        return pd.DataFrame()
+        # Medium potential examples
+        ("On-demand home cleaning app for urban families", "Home Services", "Medium"),
+        ("Tutoring marketplace for school students", "Education", "Medium"),
+        ("E-commerce store selling eco-friendly stationery", "E-commerce", "Medium"),
 
-    # 2. Map and Rename columns to fit the model's logic
-    df = df.rename(columns={
-        "Startup_Name": "text",
-        "Industry": "industry",
-        "Success": "raw_success",
-        "Investor_Interest_Score": "investor_score"
-    })
-
-    # 3. Create the required 3-class 'label' column
-    # High Potential: Successful AND high investor interest (top 30% of scores)
-    high_threshold = df["investor_score"].quantile(0.7)
-    
-    df["label"] = np.select(
-        [
-            (df["raw_success"] == 1) & (df["investor_score"] >= high_threshold),
-            (df["raw_success"] == 1) & (df["investor_score"] < high_threshold),
-            (df["raw_success"] == 0)
-        ],
-        [
-            "High",
-            "Medium",
-            "Low"
-        ],
-        default="Low"
-    )
-
-    # 4. Prepare the final combined feature for the model
-    df["combined"] = df["text"].astype(str) + " [INDUSTRY] " + df["industry"].astype(str)
-    
-    st.sidebar.success(f"Model successfully trained on {len(df)} real data rows.")
+        # Low potential examples (Generic, Low Demand Industry)
+        ("Generic social media app for everyone", "Other", "Low"),
+        ("Website that shows random quotes", "Other", "Low"),
+        ("Simple blog about my daily life", "Other", "Low"),
+    ]
+    df = pd.DataFrame(data, columns=["text", "industry", "label"])
+    df["combined"] = df["text"] + " [INDUSTRY] " + df["industry"]
+    st.sidebar.success(f"Demo Model trained on {len(df)} internal data rows.")
     return df
 
 # -----------------------------
 # 2. Model training (TF-IDF + Logistic Regression)
 # -----------------------------
 @st.cache_resource(show_spinner=False)
-def get_training_data() -> pd.DataFrame:
-    """Reads the labeled business ideas from the new, appropriate CSV file."""
-    
-    # Define the new filename
-    FILE_PATH = "appropriate_startup_data.csv" # <-- MUST BE THIS NAME
+def train_model() -> Tuple[Pipeline, Dict[str, Dict]]:
+    with st.spinner("Training ML Model on internal data..."):
+        df = get_training_data()
+        
+        # We ensure the DataFrame is not empty (which it won't be with hardcoded data)
+        X = df["combined"]
+        y = df["label"]
 
-    try:
-        df = pd.read_csv(FILE_PATH)
-    except FileNotFoundError:
-        st.error(f"Error: Training data file '{FILE_PATH}' not found. Please ensure you have uploaded it to GitHub.")
-        return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Error loading CSV file: {e}")
-        return pd.DataFrame()
+        # Smaller test_size as the total dataset is small
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=0.3, random_state=42, stratify=y
+        )
 
-    # Validation: Ensure the necessary columns exist (text, industry, label)
-    REQUIRED_COLS = ["text", "industry", "label"]
-    if not all(col in df.columns for col in REQUIRED_COLS):
-        st.error(f"Error: CSV must contain columns: {REQUIRED_COLS}. Found: {list(df.columns)}")
-        return pd.DataFrame()
-    
-    # Prepare the combined feature for the model
-    df["combined"] = df["text"].astype(str) + " [INDUSTRY] " + df["industry"].astype(str)
-    
-    st.sidebar.success(f"Model successfully trained on {len(df)} real data rows.")
-    return df
+        pipeline = Pipeline([
+            ("tfidf", TfidfVectorizer(ngram_range=(1, 2), min_df=1)),
+            ("clf", LogisticRegression(max_iter=200)) 
+        ])
+        
+        pipeline.fit(X_train, y_train) 
+
+        # Evaluate on validation set
+        y_pred = pipeline.predict(X_val)
+        report_dict = classification_report(
+            y_val, y_pred, output_dict=True, zero_division=0
+        )
+
+        return pipeline, report_dict
+
+
+# Simple model assignment (no try/except needed since data is internal)
+model, model_report = train_model()
 
 # -----------------------------
 # 3. Auxiliary "AI explanation" features (Rules-based AI for XAI)
@@ -244,180 +223,171 @@ with st.sidebar:
     st.header("About this tool")
     st.write(
         "This tool uses **TF-IDF + Logistic Regression** to classify ideas into "
-        "*High / Medium / Low* potential, trained on **real data** from the repository."
+        "*High / Medium / Low* potential. The demo uses a small internal dataset for fast loading."
     )
     st.write("Tech stack:")
     st.code("Python · Streamlit · scikit-learn · TF-IDF · LogisticRegression")
 
-    if model and model_report:
+    if model_report:
         with st.expander("Model details (for viva)"):
             st.write("Model: Logistic Regression on TF-IDF features.")
-            try:
-                data_len = len(get_training_data())
-                st.write(f"Data Size: {data_len} Rows.")
-            except Exception:
-                st.write("Data Size: 10,000 Rows (Target).")
-                
+            st.write(f"Data Size: {len(get_training_data())} Rows (Internal Demo Set).")
             st.json(model_report, expanded=False)
 
+# The model is guaranteed to exist now, so we run the main app.
+# Main inputs & outputs
+input_col, result_col = st.columns([1.1, 1.3])
 
-# Check if the model failed to load due to missing data
-if not model:
-    st.warning("Cannot run analysis. Please check the sidebar logs for data loading errors.")
-else:
-    # Main inputs & outputs
-    input_col, result_col = st.columns([1.1, 1.3])
+with input_col:
+    st.subheader("1️⃣ Input your idea")
 
-    with input_col:
-        st.subheader("1️⃣ Input your idea")
+    title = st.text_input(
+        "Business Idea Title",
+        placeholder="e.g., Subscription-based healthy tiffin service for office workers"
+    )
+    desc = st.text_area(
+        "Describe your idea",
+        placeholder="What problem do you solve? Who is the customer? How does it work?",
+        height=180
+    )
+    industry = st.selectbox(
+        "Industry",
+        ["Food & Beverage", "E-commerce", "Home Services", "Education",
+         "Healthcare", "Fintech", "Software/SaaS", "Other"]
+    )
+    goal = st.radio(
+        "What is your current goal?",
+        ["Market validation", "Competition analysis", "Funding readiness"],
+        horizontal=False
+    )
 
-        title = st.text_input(
-            "Business Idea Title",
-            placeholder="e.g., Subscription-based healthy tiffin service for office workers"
-        )
-        desc = st.text_area(
-            "Describe your idea",
-            placeholder="What problem do you solve? Who is the customer? How does it work?",
-            height=180
-        )
-        industry = st.selectbox(
-            "Industry",
-            ["Food & Beverage", "E-commerce", "Home Services", "Education",
-             "Healthcare", "Fintech", "Software/SaaS", "Other"]
-        )
-        goal = st.radio(
-            "What is your current goal?",
-            ["Market validation", "Competition analysis", "Funding readiness"],
-            horizontal=False
-        )
+    analyze_btn = st.button("🔍 Analyze Idea")
 
-        analyze_btn = st.button("🔍 Analyze Idea")
+with result_col:
+    st.subheader("2️⃣ AI Evaluation & Insights")
 
-    with result_col:
-        st.subheader("2️⃣ AI Evaluation & Insights")
-
-        if analyze_btn:
-            if not title.strip() or not desc.strip():
-                st.warning("Please fill in both the title and description.")
-            else:
-                full_text = f"{title} {desc}"
-                combined = f"{title} {desc} [INDUSTRY] {industry}"
-
-                # 1) ML model prediction
-                pred_label = model.predict([combined])[0]
-                proba = model.predict_proba([combined])[0]
-                classes = model.classes_
-
-                # Overall score from probabilities
-                label_to_weight = {"Low": 0.3, "Medium": 0.6, "High": 1.0}
-                weighted_score = sum(
-                    label_to_weight[c] * p for c, p in zip(classes, proba)
-                )
-                overall_score = int(weighted_score * 100)
-
-                # 2) Explanation features
-                feature_details, keywords = compute_explanatory_features(title, desc, industry)
-                models = suggest_business_models(full_text)
-                risks = identify_risks(industry, full_text)
-                steps = suggest_next_steps(pred_label, goal)
-
-                # --- Core Metrics ---
-                top1, top2 = st.columns(2)
-                with top1:
-                    st.metric("Overall Feasibility Score", f"{overall_score}/100")
-                with top2:
-                    st.metric("Predicted Category", pred_label)
-                
-                # Feature breakdown (Text only)
-                st.markdown("#### Feature Breakdown (for explanation)")
-                fb1, fb2 = st.columns(2)
-                with fb1:
-                    st.write(f"- Keyword richness: **{feature_details['Keyword richness']} / 100**")
-                    st.write(f"- Industry demand: **{feature_details['Industry demand']} / 100**")
-                with fb2:
-                    st.write(f"- Novelty (less generic): **{feature_details['Novelty']} / 100**")
-                    st.write(f"- Simplicity / clarity: **{feature_details['Simplicity']} / 100**")
-                    st.write(f"- Length: **{feature_details['Length (words)']} words**")
-                
-                # Keywords
-                st.markdown("#### Extracted keywords")
-                if keywords:
-                    st.write(", ".join(f"`{k}`" for k in keywords))
-                else:
-                    st.write("_No strong keywords extracted. Try using more specific, concrete words._")
-                
-                # Suggested business models
-                st.markdown("#### Suggested business model(s)")
-                st.write(", ".join(models))
-                
-                # Risks
-                st.markdown("#### Key risks")
-                for r in risks:
-                    st.write(f"- {r}")
-                
-                # Recommended next steps
-                st.markdown("#### Recommended next steps")
-                for s in steps:
-                    st.write(f"- {s}")
-                
-                # --- Dedicated Visualization Link Section ---
-                st.markdown("---")
-                st.markdown("### 📊 Dedicated Visual Analysis Dashboard")
-                st.markdown(
-                    "Click the expander below to see the **ML Probability Chart** and the **Feature Breakdown Chart**."
-                )
-                
-                # Charts are now hidden inside this expander, simulating a separate link/page
-                with st.expander("📈 Show Visual Dashboard"):
-                    st.subheader("Visual Analysis: Model & Features")
-                    
-                    # 1. Probability chart
-                    st.markdown("##### Class Probabilities (ML Output)")
-                    prob_df = pd.DataFrame({
-                        "Category": classes,
-                        "Probability": np.round(proba * 100, 1)
-                    }).sort_values("Probability", ascending=True)
-                    st.bar_chart(
-                        prob_df.set_index("Category"),
-                        height=200
-                    )
-
-                    # 2. Feature breakdown chart
-                    st.markdown("##### Feature Breakdown (Explanation Scores)")
-                    feat_df = pd.DataFrame(
-                        {
-                            "Feature": [k for k in feature_details.keys() if k != "Length (words)"],
-                            "Score": [feature_details[k] for k in feature_details.keys() if k != "Length (words)"]
-                        }
-                    )
-                    st.bar_chart(
-                        feat_df.set_index("Feature"),
-                        height=220
-                    )
-                    
-                # Quick Google research links
-                st.markdown("---")
-                st.markdown("#### 🔗 Quick Google research links")
-                comp_query = f"{industry} {title} competitors"
-                market_query = f"{industry} market size report"
-                st.markdown(f"- [Search competitors]({google_search_link(comp_query)})")
-                st.markdown(f"- [Search market size / trends]({google_search_link(market_query)})")
-                st.markdown(
-                    f"- [Search similar startup ideas]({google_search_link(title + ' startup idea')})"
-                )
-
-                # Technical explanation
-                with st.expander("Technical explanation (for report / viva)"):
-                    st.markdown(
-                        """
-                        **Model Architecture**
-
-                        - Text is converted using **TF-IDF vectorization**.
-                        - **Logistic Regression** classifier is trained on the data to output **class probabilities**.
-
-                        **Explainable AI (XAI)**
-                        - Hand-crafted NLP features (Keyword richness, Novelty, etc.) are computed alongside the ML model to provide a clear, rule-based explanation for the score, enhancing **model interpretability**.
-                        """
-                    )
+    if analyze_btn:
+        if not title.strip() or not desc.strip():
+            st.warning("Please fill in both the title and description.")
         else:
-            st.info("Enter your idea on the left and click **Analyze Idea** to see the model output here.")
+            full_text = f"{title} {desc}"
+            combined = f"{title} {desc} [INDUSTRY] {industry}"
+
+            # 1) ML model prediction
+            pred_label = model.predict([combined])[0]
+            proba = model.predict_proba([combined])[0]
+            classes = model.classes_
+
+            # Overall score from probabilities
+            label_to_weight = {"Low": 0.3, "Medium": 0.6, "High": 1.0}
+            weighted_score = sum(
+                label_to_weight[c] * p for c, p in zip(classes, proba)
+            )
+            overall_score = int(weighted_score * 100)
+
+            # 2) Explanation features
+            feature_details, keywords = compute_explanatory_features(title, desc, industry)
+            models = suggest_business_models(full_text)
+            risks = identify_risks(industry, full_text)
+            steps = suggest_next_steps(pred_label, goal)
+
+            # --- Core Metrics ---
+            top1, top2 = st.columns(2)
+            with top1:
+                st.metric("Overall Feasibility Score", f"{overall_score}/100")
+            with top2:
+                st.metric("Predicted Category", pred_label)
+            
+            # Feature breakdown (Text only)
+            st.markdown("#### Feature Breakdown (for explanation)")
+            fb1, fb2 = st.columns(2)
+            with fb1:
+                st.write(f"- Keyword richness: **{feature_details['Keyword richness']} / 100**")
+                st.write(f"- Industry demand: **{feature_details['Industry demand']} / 100**")
+            with fb2:
+                st.write(f"- Novelty (less generic): **{feature_details['Novelty']} / 100**")
+                st.write(f"- Simplicity / clarity: **{feature_details['Simplicity']} / 100**")
+                st.write(f"- Length: **{feature_details['Length (words)']} words**")
+            
+            # Keywords
+            st.markdown("#### Extracted keywords")
+            if keywords:
+                st.write(", ".join(f"`{k}`" for k in keywords))
+            else:
+                st.write("_No strong keywords extracted. Try using more specific, concrete words._")
+            
+            # Suggested business models
+            st.markdown("#### Suggested business model(s)")
+            st.write(", ".join(models))
+            
+            # Risks
+            st.markdown("#### Key risks")
+            for r in risks:
+                st.write(f"- {r}")
+            
+            # Recommended next steps
+            st.markdown("#### Recommended next steps")
+            for s in steps:
+                st.write(f"- {s}")
+            
+            # --- Dedicated Visualization Link Section ---
+            st.markdown("---")
+            st.markdown("### 📊 Dedicated Visual Analysis Dashboard")
+            st.markdown(
+                "Click the expander below to see the **ML Probability Chart** and the **Feature Breakdown Chart**."
+            )
+            
+            # Charts are now hidden inside this expander, simulating a separate link/page
+            with st.expander("📈 Show Visual Dashboard"):
+                st.subheader("Visual Analysis: Model & Features")
+                
+                # 1. Probability chart
+                st.markdown("##### Class Probabilities (ML Output)")
+                prob_df = pd.DataFrame({
+                    "Category": classes,
+                    "Probability": np.round(proba * 100, 1)
+                }).sort_values("Probability", ascending=True)
+                st.bar_chart(
+                    prob_df.set_index("Category"),
+                    height=200
+                )
+
+                # 2. Feature breakdown chart
+                st.markdown("##### Feature Breakdown (Explanation Scores)")
+                feat_df = pd.DataFrame(
+                    {
+                        "Feature": [k for k in feature_details.keys() if k != "Length (words)"],
+                        "Score": [feature_details[k] for k in feature_details.keys() if k != "Length (words)"]
+                    }
+                )
+                st.bar_chart(
+                    feat_df.set_index("Feature"),
+                    height=220
+                )
+                
+            # Quick Google research links
+            st.markdown("---")
+            st.markdown("#### 🔗 Quick Google research links")
+            comp_query = f"{industry} {title} competitors"
+            market_query = f"{industry} market size report"
+            st.markdown(f"- [Search competitors]({google_search_link(comp_query)})")
+            st.markdown(f"- [Search market size / trends]({google_search_link(market_query)})")
+            st.markdown(
+                f"- [Search similar startup ideas]({google_search_link(title + ' startup idea')})"
+            )
+
+            # Technical explanation
+            with st.expander("Technical explanation (for report / viva)"):
+                st.markdown(
+                    """
+                    **Model Architecture**
+
+                    - Text is converted using **TF-IDF vectorization**.
+                    - **Logistic Regression** classifier is trained on the demo data to output **class probabilities**.
+
+                    **Explainable AI (XAI)**
+                    - Hand-crafted NLP features (Keyword richness, Novelty, etc.) are computed alongside the ML model to provide a clear, rule-based explanation for the score, enhancing **model interpretability**.
+                    """
+                )
+    else:
+        st.info("Enter your idea on the left and click **Analyze Idea** to see the model output here.")
