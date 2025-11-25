@@ -309,7 +309,8 @@ with col_b:
     if reset_btn:
         st.session_state["title_input"] = ""
         st.session_state["desc_input"] = ""
-        st.rerun()
+        st.experimental_rerun()
+
 
 st.markdown("<div class='small' style='margin-top:12px'>Tip: Use concrete nouns & numbers. E.g., '50 corporate clients in Mumbai'.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)  # close input-card
@@ -323,10 +324,7 @@ if analyze_btn:
     if not title.strip() or not desc.strip():
         st.warning("Please fill in both the title and description.")
     else:
-        with results_placeholder.container():
-            st.markdown("<div class='result-card'><div style='height:22px;width:70%;background:#eef3ff;border-radius:8px;margin-bottom:14px'></div><div style='height:14px;width:40%;background:#f3f5f7;border-radius:6px;margin-bottom:22px'></div><div style='height:160px;background:#fbfcfe;border-radius:10px'></div></div>", unsafe_allow_html=True)
-        time.sleep(0.45)
-
+        # compute predictions / features
         full_text = f"{title} {desc}"
         combined = f"{title} {desc} [INDUSTRY] {industry}"
         pred_label = model.predict([combined])[0]
@@ -345,15 +343,28 @@ if analyze_btn:
         feat_items = {k: v for k, v in feature_details.items() if k != "Length (words)"}
         feat_df = pd.DataFrame({"Feature": list(feat_items.keys()), "Score": list(feat_items.values())})
 
+        # Render results once (no placeholder skeleton, no animation)
         with results_placeholder.container():
             st.markdown("<div class='result-card' role='region' aria-label='Top metrics'>", unsafe_allow_html=True)
             col1, col2 = st.columns([1.6, 1])
             with col1:
                 score_holder = st.empty()
-                score_holder.markdown(f"<div class='metric-big'><div><div class='metric-number'>{overall_score}</div><div class='small'>Overall Feasibility Score</div></div><div style='display:flex;flex-direction:column;align-items:flex-start;gap:8px'><div class='pill' style='background:#EBF4FF;color:var(--color-primary)'>Predicted: <strong style='margin-left:8px'>{pred_label}</strong></div><div class='small'>Model confidence: {int(round(max(proba)*100))}%</div></div></div>", unsafe_allow_html=True)
-                for v in range(0, overall_score + 1, max(1, overall_score // 20 or 1)):
-                    score_holder.markdown(f"<div class='metric-big'><div><div class='metric-number'>{v}</div><div class='small'>Overall Feasibility Score</div></div><div style='display:flex;flex-direction:column;align-items:flex-start;gap:8px'><div class='pill' style='background:#EBF4FF;color:var(--color-primary)'>Predicted: <strong style='margin-left:8px'>{pred_label}</strong></div><div class='small'>Model confidence: {int(round(max(proba)*100))}%</div></div></div>", unsafe_allow_html=True)
-                    time.sleep(0.01)
+                # Single final score render
+                score_holder.markdown(f"""
+<div class='metric-big'>
+    <div>
+        <div class='metric-number'>{overall_score}</div>
+        <div class='small'>Overall Feasibility Score</div>
+    </div>
+    <div style='display:flex;flex-direction:column;align-items:flex-start;gap:8px'>
+        <div class='pill' style='background:#EBF4FF;color:var(--color-primary)'>
+            Predicted: <strong style='margin-left:8px'>{pred_label}</strong>
+        </div>
+        <div class='small'>Model confidence: {int(round(max(proba)*100))}%</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
             with col2:
                 st.markdown("<div style='display:flex;flex-direction:column;gap:8px;align-items:flex-end'><button class='btn btn-ghost' onclick='window.print()'>Print report</button></div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
@@ -377,32 +388,34 @@ if analyze_btn:
                 st.markdown("</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
+            # Keywords & model chips
             st.markdown("<div style='display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px'>", unsafe_allow_html=True)
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
-                st.markdown("Extracted keywords")
+                st.markdown("<strong>Extracted keywords</strong>")
                 if keywords:
                     chip_html = "<div class='chips' style='margin-top:8px'>"
                     for k in keywords:
-                        if k.strip():  # only print if not empty
-                            chip_html += f"<div class='keyword'>{k}</div>"
+                        if k.strip():
+                            chip_html += f"<div class='keyword' role='note' tabindex='0'>{k}</div>"
                     chip_html += "</div>"
                     st.markdown(chip_html, unsafe_allow_html=True)
                 else:
                     st.info("No strong keywords extracted. Try using more specific, concrete words.")
                 st.markdown("<hr style='margin-top:12px;margin-bottom:12px'/>", unsafe_allow_html=True)
-                st.markdown("Suggested business model(s)")
+                st.markdown("<strong>Suggested business model(s)</strong>")
                 model_chips = "<div style='margin-top:8px' class='chips'>"
                 for m in models:
-                    if m.strip():  # only print if not empty
-                        model_chips += f"<div class='chip'>{m}</div>"
+                    if m.strip():
+                        model_chips += f"<div class='chip' tabindex='0'>{m}</div>"
                 model_chips += "</div>"
                 st.markdown(model_chips, unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
+            # risks, steps, links, etc (unchanged)
             with st.container():
                 st.markdown("<div class='result-card'>", unsafe_allow_html=True)
-                st.markdown("Key risks")
+                st.markdown("<strong>Key risks</strong>")
                 for r in risks:
                     st.markdown(f"- {r}")
                 st.markdown("<hr style='margin-top:12px;margin-bottom:12px'/>", unsafe_allow_html=True)
