@@ -289,7 +289,6 @@ st.markdown("""
 # -----------------------------
 st.markdown("<div class='app-shell'>", unsafe_allow_html=True)
 
-st.markdown("<div class='input-card' role='region' aria-labelledby='input-title'>", unsafe_allow_html=True)
 st.markdown("<h3 id='input-title'>1️⃣ Input your idea</h3>", unsafe_allow_html=True)
 
 title = st.text_input("Business Idea Title", placeholder="e.g., Subscription-based healthy tiffin service for office workers", key="title_input", help="Short, specific title describing your idea in one line.")
